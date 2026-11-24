@@ -1,11 +1,10 @@
-import { AppConfig } from "../config";
 import { IdempotencyConflictError, NotFoundError, ValidationError } from "../utils/errors";
 import { generateOrderId } from "../utils/id-generator";
 import { OrderRepository } from "../repositories/order.repository";
 import { IdempotencyRepository } from "../repositories/idempotency.repository";
 import { OrderSplitterService } from "./order-splitter.service";
 import { MarketSchedulerService } from "./market-scheduler.service";
-import { CreateOrderInput, Order, OrderType, Pagination } from "../types/order.types";
+import { CreateOrderInput, Order, OrderCursor, OrderType } from "../types/order.types";
 import Decimal from "decimal.js";
 
 export class OrderService {
@@ -57,17 +56,13 @@ export class OrderService {
     return order;
   }
 
-  getHistory(page: number, limit: number, type?: OrderType, date?: string):
-    { data: Order[]; pagination: Pagination } {
-    const result = this.orders.findAll({ page, limit, type, date });
+  getHistory(limit: number, cursor?: OrderCursor, type?: OrderType, date?: string):
+    { data: Order[]; hasMore: boolean; nextCursor?: OrderCursor } {
+    const result = this.orders.findPage({ limit, cursor, type, date });
     return {
       data: result.data,
-      pagination: {
-        page,
-        limit,
-        total: result.total,
-        totalPages: Math.ceil(result.total / limit),
-      },
+      hasMore: result.hasMore,
+      ...(result.nextCursor ? { nextCursor: result.nextCursor } : {}),
     };
   }
 }

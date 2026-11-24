@@ -31,9 +31,7 @@ export interface Order {
   unallocatedAmount: string;
 }
 
-export interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
+export interface OrderCursor {
+  createdAt: string;
+  orderId: string;
 }

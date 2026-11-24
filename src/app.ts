@@ -25,7 +25,7 @@ export function createApp(dependencies: ApplicationDependencies = {}): Express {
   const splitter = new OrderSplitterService(config);
   const scheduler = new MarketSchedulerService(config);
   const service = new OrderService(orderRepository, idempotencyRepository, splitter, scheduler);
-  const controller = new OrderController(service);
+  const controller = new OrderController(service, config);
 
   const app = express();
   app.use(helmet());

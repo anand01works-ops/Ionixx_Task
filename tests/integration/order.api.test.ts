@@ -1,5 +1,6 @@
 import request from "supertest";
 import { createApp } from "../../src/app";
+import { loadConfig } from "../../src/config";
 
 const payload = {
   type: "BUY",
@@ -22,7 +23,7 @@ describe("Order API", () => {
 
     const id = created.body.data.orderId;
     expect((await request(app).get(`/api/v1/orders/${id}`)).status).toBe(200);
-    expect((await request(app).get("/api/v1/orders?page=1&limit=10&type=BUY")).status).toBe(200);
+    expect((await request(app).get("/api/v1/orders?limit=10&type=BUY")).status).toBe(200);
   });
 
   test("creates orders without idempotency or partner headers", async () => {
@@ -84,12 +85,69 @@ describe("Order API", () => {
     expect((await request(app).get("/api/v1/health")).status).toBe(200);
   });
 
+  test("paginates order history with cursors without duplicates", async () => {
+    const app = createApp();
+    await Promise.all([
+      request(app).post("/api/v1/orders").send(payload),
+      request(app).post("/api/v1/orders").send(payload),
+      request(app).post("/api/v1/orders").send(payload),
+    ]);
+
+    const first = await request(app).get("/api/v1/orders?limit=2");
+    expect(first.status).toBe(200);
+    expect(first.body.data).toHaveLength(2);
+    expect(first.body.pagination.hasMore).toBe(true);
+    expect(first.body.pagination.nextCursor).toEqual(expect.any(String));
+
+    const second = await request(app)
+      .get(`/api/v1/orders?limit=2&cursor=${encodeURIComponent(first.body.pagination.nextCursor)}`);
+    expect(second.status).toBe(200);
+    expect(second.body.data).toHaveLength(1);
+    expect(second.body.pagination.hasMore).toBe(false);
+    expect(second.body.pagination.nextCursor).toBeNull();
+    const orderIds = [
+      ...first.body.data.map((order: { orderId: string }) => order.orderId),
+      ...second.body.data.map((order: { orderId: string }) => order.orderId),
+    ];
+    expect(new Set(orderIds).size).toBe(3);
+  });
+
+  test("uses environment-configured history page limits", async () => {
+    const config = loadConfig({ DEFAULT_PAGE_SIZE: "1", MAX_PAGE_SIZE: "2" });
+    const app = createApp({ config });
+    await Promise.all([
+      request(app).post("/api/v1/orders").send(payload),
+      request(app).post("/api/v1/orders").send(payload),
+      request(app).post("/api/v1/orders").send(payload),
+    ]);
+
+    expect((await request(app).get("/api/v1/orders")).body.data).toHaveLength(1);
+    const capped = await request(app).get("/api/v1/orders?limit=10");
+    expect(capped.body.data).toHaveLength(2);
+    expect(capped.body.pagination.limit).toBe(2);
+  });
+
+  test("fails fast for invalid environment configuration", () => {
+    expect(() => loadConfig({ MARKET_TIMEZONE: "not-a-timezone" })).toThrow(
+      "Invalid environment configuration",
+    );
+    expect(() => loadConfig({ DEFAULT_PAGE_SIZE: "10", MAX_PAGE_SIZE: "5" })).toThrow(
+      "DEFAULT_PAGE_SIZE must not exceed MAX_PAGE_SIZE",
+    );
+  });
+
+  test("rejects invalid and legacy page pagination parameters", async () => {
+    const app = createApp();
+    expect((await request(app).get("/api/v1/orders?cursor=not-valid")).status).toBe(400);
+    expect((await request(app).get("/api/v1/orders?page=2")).status).toBe(400);
+  });
+
   test("clears history in a new app instance", async () => {
     const firstApp = createApp();
     await request(firstApp).post("/api/v1/orders").set("Idempotency-Key", "restart").send(payload);
-    expect((await request(firstApp).get("/api/v1/orders")).body.pagination.total).toBe(1);
+    expect((await request(firstApp).get("/api/v1/orders")).body.data).toHaveLength(1);
 
     const restartedApp = createApp();
-    expect((await request(restartedApp).get("/api/v1/orders")).body.pagination.total).toBe(0);
+    expect((await request(restartedApp).get("/api/v1/orders")).body.data).toHaveLength(0);
   });
 });

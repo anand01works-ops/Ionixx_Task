@@ -62,8 +62,14 @@ npm install
 | Variable | Default | Meaning |
 |---|---:|---|
 | `PORT` | `3000` | HTTP listen port |
-| `QUANTITY_PRECISION` | `3` | Quantity precision, capped at 7 |
+| `QUANTITY_PRECISION` | `3` | Quantity precision, from 1 through 7 |
+| `DEFAULT_STOCK_PRICE` | `100` | Stock price when a portfolio item has no price |
+| `MARKET_TIMEZONE` | `America/New_York` | Timezone used for market scheduling |
+| `DEFAULT_PAGE_SIZE` | `20` | Default number of orders returned per history request |
+| `MAX_PAGE_SIZE` | `100` | Maximum number of orders returned per history request |
 | `NODE_ENV` | unset | Set to `production` for production error behavior |
+
+Copy `.env.example` to `.env` and adjust values for your environment. The server loads `.env` at startup; invalid values fail startup with a configuration error.
 
 ## Run and test
 
@@ -114,7 +120,7 @@ curl -X POST "http://localhost:3000/api/v1/orders" `
 
 ### GET /api/v1/orders
 
-Query parameters: `page` (default 1), `limit` (default 20, maximum 100), `type=BUY|SELL`, and `date=YYYY-MM-DD`.
+Query parameters: `limit` (default from `DEFAULT_PAGE_SIZE`, capped by `MAX_PAGE_SIZE`), `cursor` (opaque cursor returned in the previous response), `type=BUY|SELL`, and `date=YYYY-MM-DD`. Responses include `pagination.hasMore` and `pagination.nextCursor`; `page` and `totalPages` are no longer supported.
 
 ### GET /api/v1/orders/:id
 
@@ -155,7 +161,7 @@ Exchange holidays are outside scope.
 
 When supplied, the key is namespaced by `X-Partner-ID` and atomically reserved in memory before order creation. Matching payloads return the original completed order. Different payloads return 409. Concurrent matching requests wait for the original reservation and receive the same result. If no key is supplied, idempotency protection is skipped and each request creates a new order. `X-Partner-ID` is optional and defaults to `default`.
 
-In-memory entries and history are cleared on restart and are not sufficient for a multi-instance production deployment.
+In-memory entries and history are cleared on restart and are not sufficient for a multi-instance production deployment. Cursor pagination avoids re-sorting history for each request in this in-memory implementation, but production multi-instance deployments still need a shared database with matching indexes.
 
 ## Assumptions and limitations
 
